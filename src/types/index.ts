@@ -33,6 +33,10 @@ export interface SubmitResponse {
   totalCount: number;
 }
 
+export interface DraftResponse {
+  code: string | null;
+}
+
 export interface ProblemSummary {
   id: string;
   title: string;
