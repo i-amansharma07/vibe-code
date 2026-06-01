@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import { DifficultyBadge } from "@/components/DifficultyBadge";
 import { ProblemWorkspace } from "@/components/ProblemWorkspace";
+import { ResizableLayout } from "@/components/ResizableLayout";
 import type { Difficulty, Example } from "@/types";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -48,114 +49,112 @@ export default async function ProblemPage({ params }: Props) {
     })),
   };
 
-  return (
-    <div className="flex flex-col lg:flex-row h-full min-h-0">
-      {/* Left panel — description */}
-      <div className="w-full lg:w-[42%] lg:min-w-[360px] border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden">
-        <div className="overflow-y-auto flex-1 p-6 space-y-6">
-          {/* Back + title */}
-          <div>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 mb-4 transition-colors"
+  const descriptionPanel = (
+    <div className="overflow-y-auto flex-1 p-6 space-y-6">
+      {/* Back + title */}
+      <div>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 mb-4 transition-colors"
+        >
+          <ArrowLeft size={12} />
+          All problems
+        </Link>
+        <div className="flex items-start gap-3 flex-wrap">
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-tight flex-1">
+            {problem.title}
+          </h1>
+          <DifficultyBadge difficulty={problem.difficulty as Difficulty} />
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {problem.tags.map((tag) => (
+            <span
+              key={tag}
+              className="px-2 py-0.5 rounded text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700/50"
             >
-              <ArrowLeft size={12} />
-              All problems
-            </Link>
-            <div className="flex items-start gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-tight flex-1">
-                {problem.title}
-              </h1>
-              <DifficultyBadge difficulty={problem.difficulty as Difficulty} />
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {problem.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2 py-0.5 rounded text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700/50"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-              Description
-            </h2>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
-              {problem.description}
-            </p>
-          </div>
-
-          {/* Examples */}
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-              Examples
-            </h2>
-            <div className="space-y-3">
-              {(problem.examples as Example[]).map((ex, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 text-sm font-mono"
-                >
-                  <div className="text-zinc-500 text-xs mb-2 font-sans font-semibold">
-                    Example {i + 1}
-                  </div>
-                  <div className="space-y-1">
-                    <div>
-                      <span className="text-zinc-500">Input: </span>
-                      <span className="text-zinc-800 dark:text-zinc-200">
-                        {ex.input}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500">Output: </span>
-                      <span className="text-zinc-800 dark:text-zinc-200">
-                        {ex.output}
-                      </span>
-                    </div>
-                    {ex.explanation && (
-                      <div className="text-xs text-zinc-500 font-sans mt-1">
-                        {ex.explanation}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Constraints */}
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-              Constraints
-            </h2>
-            <ul className="space-y-1">
-              {problem.constraints.map((c, i) => (
-                <li
-                  key={i}
-                  className="text-sm font-mono text-zinc-700 dark:text-zinc-400 flex items-start gap-2"
-                >
-                  <span className="text-zinc-600 mt-0.5">·</span>
-                  {c}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Hints */}
-          <HintsSection hints={problem.hints} />
+              {tag}
+            </span>
+          ))}
         </div>
       </div>
 
-      {/* Right panel — editor */}
-      <div className="flex-1 min-h-0 flex flex-col" style={{ minHeight: "500px" }}>
-        <ProblemWorkspace problem={problemDetail} />
+      {/* Description */}
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
+          Description
+        </h2>
+        <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
+          {problem.description}
+        </p>
       </div>
+
+      {/* Examples */}
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
+          Examples
+        </h2>
+        <div className="space-y-3">
+          {(problem.examples as Example[]).map((ex, i) => (
+            <div
+              key={i}
+              className="rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 text-sm font-mono"
+            >
+              <div className="text-zinc-500 text-xs mb-2 font-sans font-semibold">
+                Example {i + 1}
+              </div>
+              <div className="space-y-1">
+                <div>
+                  <span className="text-zinc-500">Input: </span>
+                  <span className="text-zinc-800 dark:text-zinc-200">
+                    {ex.input}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-500">Output: </span>
+                  <span className="text-zinc-800 dark:text-zinc-200">
+                    {ex.output}
+                  </span>
+                </div>
+                {ex.explanation && (
+                  <div className="text-xs text-zinc-500 font-sans mt-1">
+                    {ex.explanation}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Constraints */}
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
+          Constraints
+        </h2>
+        <ul className="space-y-1">
+          {problem.constraints.map((c, i) => (
+            <li
+              key={i}
+              className="text-sm font-mono text-zinc-700 dark:text-zinc-400 flex items-start gap-2"
+            >
+              <span className="text-zinc-600 mt-0.5">·</span>
+              {c}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Hints */}
+      <HintsSection hints={problem.hints} />
     </div>
+  );
+
+  return (
+    <ResizableLayout
+      left={descriptionPanel}
+      right={<ProblemWorkspace problem={problemDetail} />}
+      defaultLeftPercent={42}
+    />
   );
 }
 

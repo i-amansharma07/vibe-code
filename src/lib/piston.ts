@@ -59,6 +59,57 @@ __sys.stdout.write(__json.dumps(__results))
 `;
 }
 
+function cleanErrorMessage(
+  stderr: string,
+  language: "javascript" | "python",
+  userCodeLineOffset: number
+): string {
+  const lines = stderr.trim().split("\n");
+
+  if (language === "javascript") {
+    // Extract line number from the leading "filepath:LINE" or "filepath:LINE:COL" header
+    let lineNum: number | null = null;
+    for (const line of lines) {
+      const m = line.match(/^.*\.js:(\d+)(?::\d+)?$/);
+      if (m) {
+        const adjusted = parseInt(m[1]) - userCodeLineOffset;
+        if (adjusted > 0) lineNum = adjusted;
+        break;
+      }
+    }
+    // Find the typed error message, e.g. "SyntaxError: Unexpected token '{'"
+    const errorLine = lines.find((l) => /^\w+Error:/.test(l.trim()));
+    if (errorLine) {
+      const msg = errorLine.trim();
+      return lineNum ? `${msg} (line ${lineNum})` : msg;
+    }
+    // Fallback: drop internal "at ..." stack frames, return first meaningful lines
+    const meaningful = lines
+      .filter((l) => l.trim() && !/^\s+at\s/.test(l))
+      .slice(0, 4)
+      .join("\n");
+    return meaningful || stderr.trim();
+  } else {
+    // Python: "  File "...", line X"
+    let lineNum: number | null = null;
+    for (const line of lines) {
+      const m = line.match(/File ".*", line (\d+)/);
+      if (m) {
+        const adjusted = parseInt(m[1]) - userCodeLineOffset;
+        if (adjusted > 0) lineNum = adjusted;
+        break;
+      }
+    }
+    // Last non-indented line is the error message
+    const errorLine = [...lines].reverse().find((l) => l.trim() && !/^\s/.test(l));
+    if (errorLine) {
+      const msg = errorLine.trim();
+      return lineNum ? `${msg} (line ${lineNum})` : msg;
+    }
+    return stderr.trim();
+  }
+}
+
 export async function executeCode(
   language: "javascript" | "python",
   userCode: string,
@@ -101,14 +152,15 @@ export async function executeCode(
     }
 
     if (stderr && !stdout) {
-      const lastLine = stderr.trim().split("\n").pop() || stderr;
+      const lineOffset = isJs ? 1 : 3;
+      const errorMsg = cleanErrorMessage(stderr, language, lineOffset);
       return {
         results: testCases.map((tc) => ({
           passed: false,
           input: tc.input,
           expected: tc.expected,
           output: null,
-          error: lastLine,
+          error: errorMsg,
         })),
       };
     }

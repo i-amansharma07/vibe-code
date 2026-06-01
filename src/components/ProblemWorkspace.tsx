@@ -69,7 +69,11 @@ export function ProblemWorkspace({ problem }: Props) {
   const [submitResult, setSubmitResult] = useState<SubmitResponse | null>(null);
   const [activeTab, setActiveTab] = useState<"results" | null>(null);
   const [userUuid, setUserUuid] = useState<string>("");
+  const [resultsHeight, setResultsHeight] = useState(220);
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
+  const resizingResults = useRef(false);
+  const resizeStartY = useRef(0);
+  const resizeStartHeight = useRef(0);
   const isDirty = useRef(false);
   const flushInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const latestCode = useRef(code);
@@ -77,6 +81,26 @@ export function ProblemWorkspace({ problem }: Props) {
 
   useEffect(() => { latestCode.current = code; }, [code]);
   useEffect(() => { latestLang.current = language; }, [language]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizingResults.current) return;
+      const delta = resizeStartY.current - e.clientY;
+      setResultsHeight(Math.min(500, Math.max(80, resizeStartHeight.current + delta)));
+    };
+    const onUp = () => {
+      if (!resizingResults.current) return;
+      resizingResults.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   // Resolve userUuid and load authoritative draft from DB
   useEffect(() => {
@@ -311,26 +335,53 @@ export function ProblemWorkspace({ problem }: Props) {
 
       {/* Results panel */}
       {activeTab === "results" && (runResult || submitResult) && (
-        <div className="border-t border-zinc-800 p-4 max-h-64 overflow-y-auto shrink-0">
-          {runResult && (
-            <TestResults
-              results={runResult.results}
-              passedCount={runResult.passedCount}
-              totalCount={runResult.totalCount}
-              mode="run"
-            />
-          )}
-          {submitResult && (
-            <TestResults
-              results={submitResult.results}
-              passedCount={submitResult.passedCount}
-              totalCount={submitResult.totalCount}
-              mode="submit"
-              message={submitResult.message}
-              allPassed={submitResult.passed}
-            />
-          )}
-        </div>
+        <>
+          {/* Vertical drag handle */}
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              resizingResults.current = true;
+              resizeStartY.current = e.clientY;
+              resizeStartHeight.current = resultsHeight;
+              document.body.style.userSelect = "none";
+              document.body.style.cursor = "row-resize";
+            }}
+            onDoubleClick={() => setResultsHeight(220)}
+            title="Drag to resize · Double-click to reset"
+            className="h-1 shrink-0 cursor-row-resize group relative bg-zinc-800 hover:bg-indigo-500 transition-colors border-t border-zinc-800 z-10"
+          >
+            <div className="absolute -top-1.5 -bottom-1.5 inset-x-0" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-row gap-0.75 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              {[0, 1, 2, 3].map((i) => (
+                <span key={i} className="block w-0.75 h-0.75 rounded-full bg-indigo-300" />
+              ))}
+            </div>
+          </div>
+
+          <div
+            style={{ height: resultsHeight }}
+            className="overflow-y-auto shrink-0 p-4"
+          >
+            {runResult && (
+              <TestResults
+                results={runResult.results}
+                passedCount={runResult.passedCount}
+                totalCount={runResult.totalCount}
+                mode="run"
+              />
+            )}
+            {submitResult && (
+              <TestResults
+                results={submitResult.results}
+                passedCount={submitResult.passedCount}
+                totalCount={submitResult.totalCount}
+                mode="submit"
+                message={submitResult.message}
+                allPassed={submitResult.passed}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );
