@@ -23,6 +23,7 @@ model Problem {
   testCases   TestCase[]
   hints       Hint[]
   submissions Submission[]
+  drafts      Draft[]
   createdAt   DateTime     @default(now())
 }
 
@@ -47,6 +48,7 @@ model User {
   id          String       @id @default(cuid())
   uuid        String       @unique
   submissions Submission[]
+  drafts      Draft[]
   createdAt   DateTime     @default(now())
 }
 
@@ -61,6 +63,19 @@ model Submission {
   passed    Boolean
   passedAt  DateTime?
   createdAt DateTime  @default(now())
+}
+
+model Draft {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  problemId String
+  problem   Problem  @relation(fields: [problemId], references: [id])
+  language  String
+  code      String
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, problemId, language])
 }
 
 enum Difficulty {
