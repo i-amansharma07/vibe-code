@@ -57,12 +57,8 @@ const dbLoad = async (
 export function ProblemWorkspace({ problem }: Props) {
   const { resolvedTheme } = useTheme();
   const [language, setLanguage] = useState<Language>("javascript");
-  const [code, setCode] = useState(() =>
-    lsLoad(problem.id, "javascript", problem.starterJs)
-  );
-  const [autoSave, setAutoSave] = useState<boolean>(() =>
-    localStorage.getItem("vibe_autosave") !== "false"
-  );
+  const [code, setCode] = useState(problem.starterJs);
+  const [autoSave, setAutoSave] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
@@ -102,7 +98,7 @@ export function ProblemWorkspace({ problem }: Props) {
     };
   }, []);
 
-  // Resolve userUuid and load authoritative draft from DB
+  // Resolve userUuid, load localStorage immediately, then override with DB draft
   useEffect(() => {
     let uuid = localStorage.getItem("vibe_user_id");
     if (!uuid) {
@@ -110,6 +106,10 @@ export function ProblemWorkspace({ problem }: Props) {
       localStorage.setItem("vibe_user_id", uuid);
     }
     setUserUuid(uuid);
+
+    // Instant: apply saved code + autosave preference from localStorage
+    setCode(lsLoad(problem.id, "javascript", problem.starterJs));
+    setAutoSave(localStorage.getItem("vibe_autosave") !== "false");
 
     dbLoad(uuid, problem.id, "javascript").then((saved) => {
       if (saved !== null) {
