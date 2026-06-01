@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Problem {
+  id          String       @id @default(cuid())
+  title       String
+  slug        String       @unique
+  difficulty  Difficulty
+  tags        String[]
+  description String
+  examples    Json
+  constraints String[]
+  starterJs   String
+  starterPy   String
+  fnNameJs    String
+  fnNamePy    String
+  testCases   TestCase[]
+  hints       Hint[]
+  submissions Submission[]
+  createdAt   DateTime     @default(now())
+}
+
+model TestCase {
+  id        String  @id @default(cuid())
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id])
+  input     Json
+  expected  Json
+  isVisible Boolean @default(false)
+}
+
+model Hint {
+  id        String  @id @default(cuid())
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id])
+  order     Int
+  body      String
+}
+
+model User {
+  id          String       @id @default(cuid())
+  uuid        String       @unique
+  submissions Submission[]
+  createdAt   DateTime     @default(now())
+}
+
+model Submission {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  problemId String
+  problem   Problem   @relation(fields: [problemId], references: [id])
+  language  String
+  code      String
+  passed    Boolean
+  passedAt  DateTime?
+  createdAt DateTime  @default(now())
+}
+
+enum Difficulty {
+  BEGINNER
+  AMATEUR
+  SEMI_PRO
+  PROFESSIONAL
+  LEGENDARY
+}
