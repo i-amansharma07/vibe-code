@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
-import { Play, Send, Wand2, ChevronDown } from "lucide-react";
+import { Play, Send, Wand2, ChevronDown, Save } from "lucide-react";
 import { TestResults } from "./TestResults";
-import type { ProblemDetail, RunResponse, SubmitResponse } from "@/types";
+import type { ProblemDetail, RunResponse, SubmitResponse, DraftResponse } from "@/types";
 import type * as MonacoType from "monaco-editor";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
@@ -23,10 +23,46 @@ interface Props {
   problem: ProblemDetail;
 }
 
+// localStorage cache — instant reads, no network
+const lsKey = (id: string, lang: Language) => `vibe_code_${id}_${lang}`;
+const lsSave = (id: string, lang: Language, val: string) =>
+  localStorage.setItem(lsKey(id, lang), val);
+const lsLoad = (id: string, lang: Language, fallback: string) =>
+  localStorage.getItem(lsKey(id, lang)) ?? fallback;
+
+// DB helpers — fire-and-forget saves, awaitable loads
+const dbSave = (userUuid: string, problemId: string, lang: Language, code: string) =>
+  fetch("/api/draft", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userUuid, problemId, language: lang, code }),
+  }).catch(() => {});
+
+const dbLoad = async (
+  userUuid: string,
+  problemId: string,
+  lang: Language
+): Promise<string | null> => {
+  try {
+    const res = await fetch(
+      `/api/draft?uuid=${userUuid}&problemId=${problemId}&language=${lang}`
+    );
+    const data: DraftResponse = await res.json();
+    return data.code;
+  } catch {
+    return null;
+  }
+};
+
 export function ProblemWorkspace({ problem }: Props) {
   const { resolvedTheme } = useTheme();
   const [language, setLanguage] = useState<Language>("javascript");
-  const [code, setCode] = useState(problem.starterJs);
+  const [code, setCode] = useState(() =>
+    lsLoad(problem.id, "javascript", problem.starterJs)
+  );
+  const [autoSave, setAutoSave] = useState<boolean>(() =>
+    localStorage.getItem("vibe_autosave") !== "false"
+  );
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
@@ -34,7 +70,15 @@ export function ProblemWorkspace({ problem }: Props) {
   const [activeTab, setActiveTab] = useState<"results" | null>(null);
   const [userUuid, setUserUuid] = useState<string>("");
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
+  const isDirty = useRef(false);
+  const flushInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const latestCode = useRef(code);
+  const latestLang = useRef<Language>(language);
 
+  useEffect(() => { latestCode.current = code; }, [code]);
+  useEffect(() => { latestLang.current = language; }, [language]);
+
+  // Resolve userUuid and load authoritative draft from DB
   useEffect(() => {
     let uuid = localStorage.getItem("vibe_user_id");
     if (!uuid) {
@@ -42,11 +86,69 @@ export function ProblemWorkspace({ problem }: Props) {
       localStorage.setItem("vibe_user_id", uuid);
     }
     setUserUuid(uuid);
-  }, []);
+
+    dbLoad(uuid, problem.id, "javascript").then((saved) => {
+      if (saved !== null) {
+        setCode(saved);
+        lsSave(problem.id, "javascript", saved);
+      }
+    });
+  }, [problem.id]);
+
+  // Flush to DB on a fixed 30s interval when dirty — caps DB writes to ~2/min
+  useEffect(() => {
+    if (!autoSave) {
+      if (flushInterval.current) clearInterval(flushInterval.current);
+      flushInterval.current = null;
+      return;
+    }
+    flushInterval.current = setInterval(() => {
+      if (isDirty.current) {
+        const uuid = localStorage.getItem("vibe_user_id");
+        if (uuid) {
+          dbSave(uuid, problem.id, latestLang.current, latestCode.current);
+          isDirty.current = false;
+        }
+      }
+    }, 30_000);
+    return () => {
+      if (flushInterval.current) clearInterval(flushInterval.current);
+    };
+  }, [autoSave, problem.id]);
+
+  // Save to both layers on unmount (handles navigation away)
+  useEffect(() => {
+    return () => {
+      if (flushInterval.current) clearInterval(flushInterval.current);
+      lsSave(problem.id, latestLang.current, latestCode.current);
+      const uuid = localStorage.getItem("vibe_user_id");
+      if (uuid) dbSave(uuid, problem.id, latestLang.current, latestCode.current);
+    };
+  }, [problem.id]);
+
+  const persist = (uuid: string, lang: Language, value: string) => {
+    lsSave(problem.id, lang, value);
+    dbSave(uuid, problem.id, lang, value);
+    isDirty.current = false;
+  };
 
   const handleLanguageChange = (lang: Language) => {
+    if (userUuid) persist(userUuid, language, code);
+
+    const fallback = lang === "javascript" ? problem.starterJs : problem.starterPy;
+    const cached = lsLoad(problem.id, lang, fallback);
     setLanguage(lang);
-    setCode(lang === "javascript" ? problem.starterJs : problem.starterPy);
+    setCode(cached);
+
+    if (userUuid) {
+      dbLoad(userUuid, problem.id, lang).then((saved) => {
+        if (saved !== null) {
+          setCode(saved);
+          lsSave(problem.id, lang, saved);
+        }
+      });
+    }
+
     setRunResult(null);
     setSubmitResult(null);
     setActiveTab(null);
@@ -54,6 +156,14 @@ export function ProblemWorkspace({ problem }: Props) {
 
   const handlePrettify = () => {
     editorRef.current?.getAction("editor.action.formatDocument")?.run();
+  };
+
+  const toggleAutoSave = () => {
+    setAutoSave((prev) => {
+      const next = !prev;
+      localStorage.setItem("vibe_autosave", String(next));
+      return next;
+    });
   };
 
   const handleRun = async () => {
@@ -123,13 +233,27 @@ export function ProblemWorkspace({ problem }: Props) {
             className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
           />
         </div>
-        <button
-          onClick={handlePrettify}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
-        >
-          <Wand2 size={13} />
-          Prettify
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={toggleAutoSave}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg transition-colors ${
+              autoSave
+                ? "text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+            }`}
+            title={autoSave ? "Auto-save on — click to disable" : "Auto-save off — click to enable"}
+          >
+            <Save size={13} />
+            {autoSave ? "Auto-save on" : "Auto-save off"}
+          </button>
+          <button
+            onClick={handlePrettify}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <Wand2 size={13} />
+            Prettify
+          </button>
+        </div>
       </div>
 
       {/* Monaco Editor */}
@@ -139,9 +263,18 @@ export function ProblemWorkspace({ problem }: Props) {
           language={monacoLang}
           theme={editorTheme}
           value={code}
-          onChange={(val) => setCode(val ?? "")}
-          onMount={(editor) => {
+          onChange={(val) => {
+            const v = val ?? "";
+            setCode(v);
+            lsSave(problem.id, language, v);
+            isDirty.current = true;
+          }}
+          onMount={(editor, monaco) => {
             editorRef.current = editor;
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+              const uuid = localStorage.getItem("vibe_user_id");
+              if (uuid) persist(uuid, latestLang.current, latestCode.current);
+            });
           }}
           options={{
             fontSize: 14,
