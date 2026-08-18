@@ -5,6 +5,7 @@
 **vibe-code** is a gamified, Discord-vibe LeetCode alternative designed for friendly, low-stress DSA problem solving. Unlike competitive coding platforms with high-pressure scoring and corporate aesthetics, vibe-code focuses on a chill learning atmosphere with informal slang feedback, anonymous sessions, and plans for multiplayer hangout rooms.
 
 ### Core Philosophy & Features
+
 - **Zero Friction & Anonymous Identity**: No mandatory login or auth flows; users are identified by a persistent UUID generated client-side and stored in `localStorage` (`vibe_user_id`).
 - **Interactive Problem Workspace**: Split-panel interface with problem descriptions, examples, constraints, collapsible hints, language switching (JavaScript & Python), code formatting, and Monaco Editor.
 - **Run vs. Submit Dual-Execution**:
@@ -17,16 +18,16 @@
 
 ## 2. Technology Stack
 
-| Layer | Technology | Details / Purpose |
-|---|---|---|
-| **Framework** | [Next.js 16.2.6](https://nextjs.org/) | App Router architecture, Server Components for DB querying, Client Components for Monaco editor & test runner UI. |
-| **UI & React** | [React 19.2.4](https://react.dev/) | Utilizes modern React hooks, dynamic imports with SSR disabling for Monaco. |
-| **Database** | [PostgreSQL 16](https://www.postgresql.org/) | Containerized via Docker Compose, mapped to host port `5433`. |
-| **ORM** | [Prisma 7.8.0](https://www.prisma.io/) | `@prisma/adapter-pg` engine driver, custom output directory at `src/generated/prisma`. |
-| **Code Editor** | [`@monaco-editor/react` 4.7.0](https://github.com/suren-atoyan/monaco-react) | Web-based VS Code editor loaded dynamically on client. |
-| **Styling** | [Tailwind CSS 4](https://tailwindcss.com/) + PostCSS | Configured via `@tailwindcss/postcss`. |
-| **Icons & Theming** | `lucide-react` & `next-themes` | System/light/dark theme toggling with theme synchronization in Monaco. |
-| **Sandbox Execution** | Piston (Docker) + Local Runner | Piston container on port `2000`; local driver runner in `src/lib/piston.ts`. |
+| Layer                       | Technology                                                                    | Details / Purpose                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Framework**         | [Next.js 16.2.6](https://nextjs.org/)                                          | App Router architecture, Server Components for DB querying, Client Components for Monaco editor & test runner UI. |
+| **UI & React**        | [React 19.2.4](https://react.dev/)                                             | Utilizes modern React hooks, dynamic imports with SSR disabling for Monaco.                                       |
+| **Database**          | [PostgreSQL 16](https://www.postgresql.org/)                                   | Containerized via Docker Compose, mapped to host port`5433`.                                                    |
+| **ORM**               | [Prisma 7.8.0](https://www.prisma.io/)                                         | `@prisma/adapter-pg` engine driver, custom output directory at `src/generated/prisma`.                        |
+| **Code Editor**       | [`@monaco-editor/react` 4.7.0](https://github.com/suren-atoyan/monaco-react) | Web-based VS Code editor loaded dynamically on client.                                                            |
+| **Styling**           | [Tailwind CSS 4](https://tailwindcss.com/) + PostCSS                           | Configured via`@tailwindcss/postcss`.                                                                           |
+| **Icons & Theming**   | `lucide-react` & `next-themes`                                            | System/light/dark theme toggling with theme synchronization in Monaco.                                            |
+| **Sandbox Execution** | Piston (Docker) + Local Runner                                                | Piston container on port`2000`; local driver runner in `src/lib/piston.ts`.                                   |
 
 ---
 
@@ -35,6 +36,7 @@
 ### Sandbox Environment & Piston Integration
 
 #### Configured Infrastructure:
+
 - `docker-compose.yml` configures two services:
   1. `postgres`: PostgreSQL 16 Alpine running on port `5433:5432`.
   2. `piston`: `ghcr.io/engineer-man/piston` running on port `2000:2000` with resource limits (`tmpfs`, `nofile: 65536`, `nproc: 512`).
@@ -43,6 +45,7 @@
   - Node.js / JavaScript (`18.15.0`)
 
 #### Current Execution Engine (`src/lib/piston.ts`):
+
 Although named `piston.ts` and configured in docker, the current execution layer is implemented as a **direct host process execution** using Node.js `child_process.execFile`:
 
 ```
@@ -142,6 +145,7 @@ erDiagram
 ```
 
 ### Key Enums & Models:
+
 - **`Difficulty`**: `BEGINNER`, `AMATEUR`, `SEMI_PRO`, `PROFESSIONAL`, `LEGENDARY`.
 - **`TestCase`**: Separation between visible sample test cases (`isVisible: true`) and hidden test cases for full verification during submission.
 - **`Draft`**: Composite unique index `@@unique([userId, problemId, language])` enabling persistent per-problem, per-language drafts across devices/sessions.
@@ -151,6 +155,7 @@ erDiagram
 ## 5. API Contracts & Endpoints
 
 ### 1. Run Code
+
 - **Endpoint**: `POST /api/run`
 - **Purpose**: Runs user code against public test cases without recording to DB.
 - **Payload**:
@@ -178,6 +183,7 @@ erDiagram
   ```
 
 ### 2. Submit Solution
+
 - **Endpoint**: `POST /api/submit`
 - **Purpose**: Runs user code against all test cases, upserts anonymous user, and writes a `Submission` record.
 - **Payload**:
@@ -201,6 +207,7 @@ erDiagram
   ```
 
 ### 3. Solved Problems Query
+
 - **Endpoint**: `GET /api/user/solved?uuid=<uuid>`
 - **Response**:
   ```json
@@ -208,6 +215,7 @@ erDiagram
   ```
 
 ### 4. Code Draft Autosave
+
 - **Endpoint**: `GET /api/draft?uuid=...&problemId=...&language=...` → `{ "code": "..." | null }`
 - **Endpoint**: `PUT /api/draft` → `{ "ok": true }`
 
@@ -263,19 +271,23 @@ vibe-code/
 ## 7. Key Findings & Recommendations
 
 ### 1. Code Execution Sandboxing & Security
+
 - **Finding**: Currently, `src/lib/piston.ts` executes code directly on the host operating system using `child_process.execFile` rather than delegating execution to the Piston Docker container over HTTP (`http://localhost:2000/api/v2/execute`).
 - **Security Implication**: Submitting malicious payloads (e.g. `process.exit()`, file system reads, infinite loops, fork bombs) runs directly on the server hosting the Next.js process.
 - **Recommendation**: Complete the HTTP adapter in `piston.ts` to submit code payloads to the Piston container endpoint `POST /api/v2/execute`, isolating untrusted user code inside Piston's sandboxed environment.
 
 ### 2. Multi-Argument & Complex Type Serialization
+
 - **Finding**: Test cases unpack arguments using spread syntax `...tc.input` (JS) and `*tc["input"]` (Python).
 - **Recommendation**: When adding problems with custom data structures (e.g., Linked Lists, Binary Trees, Graph nodes), introduce custom driver serializers/deserializers into the driver code templates.
 
 ### 3. Metrics & Complexity Tracking
+
 - **Finding**: The platform does not currently report runtime (ms) or memory footprint (KB/MB) back to the user upon submission.
 - **Recommendation**: Capture execution wall-clock time and memory usage from Piston's response or `process.hrtime()` and render performance cards alongside test results.
 
 ### 4. Roadmap Realization (from `PLAN.md`)
+
 - **Upcoming Features**:
   - Live collaborative rooms with WebSockets or WebRTC.
   - Whiteboard integrations ([tldraw](https://tldraw.dev/) / [Excalidraw](https://excalidraw.com/)).
