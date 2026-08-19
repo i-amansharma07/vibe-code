@@ -1,3 +1,4 @@
+connection pooling
 BullMQ, if used
 Prisma schema and migrations
 Idempotent submissions
