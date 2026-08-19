@@ -1,0 +1,11 @@
+BullMQ, if used
+Prisma schema and migrations
+Idempotent submissions
+Job retries and failure handling
+Execution timeout
+Resource isolation
+Submission status state machine
+API validation
+Docker Compose
+Tests
+Deployment
