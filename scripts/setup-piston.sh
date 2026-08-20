@@ -1,17 +1,26 @@
 #!/bin/bash
 set -e
 
-echo "⏳ Waiting for Piston to be ready..."
-until curl -s http://localhost:2000/api/v2/runtimes > /dev/null 2>&1; do
+echo "⏳ Waiting for Piston API on port 2000..."
+until curl -s -f http://localhost:2000/api/v2/runtimes > /dev/null 2>&1; do
   sleep 2
 done
-
-echo "📦 Installing Python 3.10.0..."
-docker exec vibe-code-piston piston ppman install python=3.10.0
-
-echo "📦 Installing Node.js 18.15.0 (javascript)..."
-docker exec vibe-code-piston piston ppman install javascript=18.15.0
+echo "✅ Piston is online!"
 
 echo ""
-echo "✅ Piston runtimes installed!"
-echo "   Run: curl http://localhost:2000/api/v2/runtimes to verify."
+echo "📦 Installing Python (3.10.0)..."
+curl -X POST http://localhost:2000/api/v2/packages \
+  -H "Content-Type: application/json" \
+  -d '{"language": "python", "version": "3.10.0"}'
+
+echo ""
+echo "📦 Installing JavaScript (18.15.0)..."
+curl -X POST http://localhost:2000/api/v2/packages \
+  -H "Content-Type: application/json" \
+  -d '{"language": "javascript", "version": "18.15.0"}'
+
+echo ""
+echo "-----------------------------------"
+echo "🔍 Checking installed runtimes:"
+curl http://localhost:2000/api/v2/runtimes
+echo ""

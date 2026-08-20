@@ -1,20 +1,116 @@
-import { execFile } from "child_process";
-import { writeFile, unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
-import { promisify } from "util";
+interface PistonFile {
+  name?: string;
+  content: string;
+  encoding?: string;
+}
 
-const execFileAsync = promisify(execFile);
+interface PistonExecuteRequest {
+  language: string;
+  version: string;
+  files: PistonFile[];
+  stdin?: string;
+  args?: string[];
+  compile_timeout?: number;
+  run_timeout?: number;
+  compile_memory_limit?: number;
+  run_memory_limit?: number;
+}
 
-// Path to Node.js installed via NVM (falls back to system node)
-const NVM_NODE =
-  process.env.NVM_NODE_PATH ||
-  join(process.env.HOME || "", ".nvm/versions/node/v20.20.2/bin/node");
+interface PistonStageResult {
+  stdout: string;
+  stderr: string;
+  output: string;
+  code: number;
+  signal: string | null;
+}
+
+interface PistonExecuteResponse {
+  language: string;
+  version: string;
+  run: PistonStageResult;
+  compile?: PistonStageResult;
+}
+
+interface SandboxExecutionResponse {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  signal: string | null;
+}
+
+const PISTON_URL = process.env.PISTON_URL || "http://localhost:2000";
+
+const RUNTIME_CONFIG = {
+  javascript: {
+    language: "javascript",
+    version: "18.15.0",
+    filename: "index.js",
+  },
+  python: {
+    language: "python",
+    version: "3.10.0",
+    filename: "main.py",
+  },
+} as const;
+
+async function executeInPiston(
+  language: "javascript" | "python",
+  code: string,
+): Promise<SandboxExecutionResponse> {
+  const config = RUNTIME_CONFIG[language];
+
+  const payload: PistonExecuteRequest = {
+    language: config.language,
+    version: config.version,
+    files: [{ name: config.filename, content: code }],
+    run_timeout: 5000,
+    compile_timeout: 5000,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${PISTON_URL}/api/v2/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to reach Piston execution service at ${PISTON_URL}. Is Docker running? 
+      (${error instanceof Error ? error.message : "Network error"})`,
+    );
+  }
+
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "");
+    throw new Error(`Piston API error 
+      (${res.status} ${res.statusText}): ${errorText}`);
+  }
+
+  const data: PistonExecuteResponse = await res.json();
+
+  //if code crashes and dont get executed
+  if (data.compile && data.compile.code !== 0) {
+    return {
+      stdout: data.compile.stdout || "",
+      stderr: data.compile.stderr || data.compile.output || "Compilation Error",
+      exitCode: data.compile.code,
+      signal: data.compile.signal,
+    };
+  }
+
+  return {
+    stdout: data.run.stdout || "",
+    stderr: data.run.stderr || "",
+    exitCode: data.run.code,
+    signal: data.run.signal,
+  };
+}
 
 function buildJsDriver(
-  userCode: string,
-  fnName: string,
-  testCases: { input: unknown[]; expected: unknown }[]
+  userCode: string, //source code
+  fnName: string, //function name which will be called by our driver
+  testCases: { input: unknown[]; expected: unknown }[],
 ): string {
   const testData = JSON.stringify(testCases);
   return `
@@ -37,7 +133,7 @@ process.stdout.write(JSON.stringify(__results));
 function buildPyDriver(
   userCode: string,
   fnName: string,
-  testCases: { input: unknown[]; expected: unknown }[]
+  testCases: { input: unknown[]; expected: unknown }[],
 ): string {
   const testData = JSON.stringify(testCases);
   return `
@@ -62,7 +158,7 @@ __sys.stdout.write(__json.dumps(__results))
 function cleanErrorMessage(
   stderr: string,
   language: "javascript" | "python",
-  userCodeLineOffset: number
+  userCodeLineOffset: number,
 ): string {
   const lines = stderr.trim().split("\n");
 
@@ -101,7 +197,9 @@ function cleanErrorMessage(
       }
     }
     // Last non-indented line is the error message
-    const errorLine = [...lines].reverse().find((l) => l.trim() && !/^\s/.test(l));
+    const errorLine = [...lines]
+      .reverse()
+      .find((l) => l.trim() && !/^\s/.test(l));
     if (errorLine) {
       const msg = errorLine.trim();
       return lineNum ? `${msg} (line ${lineNum})` : msg;
@@ -114,7 +212,7 @@ export async function executeCode(
   language: "javascript" | "python",
   userCode: string,
   fnName: string,
-  testCases: { input: unknown[]; expected: unknown }[]
+  testCases: { input: unknown[]; expected: unknown }[],
 ): Promise<{
   results: {
     passed: boolean;
@@ -125,71 +223,58 @@ export async function executeCode(
   }[];
 }> {
   const isJs = language === "javascript";
-  const ext = isJs ? "js" : "py";
-  const tmpFile = join(tmpdir(), `vibe-exec-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`);
-
   const fullCode = isJs
     ? buildJsDriver(userCode, fnName, testCases)
     : buildPyDriver(userCode, fnName, testCases);
 
-  try {
-    await writeFile(tmpFile, fullCode, "utf8");
+  const { stdout, stderr, signal, exitCode } = await executeInPiston(
+    language,
+    fullCode,
+  );
 
-    let stdout: string;
-    let stderr: string;
-
-    if (isJs) {
-      // Use NVM node if available, otherwise system node
-      const nodeCmd = await checkFile(NVM_NODE) ? NVM_NODE : "node";
-      ({ stdout, stderr } = await execFileAsync(nodeCmd, [tmpFile], {
-        timeout: 5000,
-        env: { ...process.env, NODE_PATH: "" },
-      }).catch((e) => ({ stdout: e.stdout || "", stderr: e.stderr || e.message })));
-    } else {
-      ({ stdout, stderr } = await execFileAsync("python3", [tmpFile], {
-        timeout: 5000,
-      }).catch((e) => ({ stdout: e.stdout || "", stderr: e.stderr || e.message })));
-    }
-
-    if (stderr && !stdout) {
-      const lineOffset = isJs ? 1 : 3;
-      const errorMsg = cleanErrorMessage(stderr, language, lineOffset);
-      return {
-        results: testCases.map((tc) => ({
-          passed: false,
-          input: tc.input,
-          expected: tc.expected,
-          output: null,
-          error: errorMsg,
-        })),
-      };
-    }
-
-    try {
-      const results = JSON.parse(stdout || "[]");
-      return { results };
-    } catch {
-      return {
-        results: testCases.map((tc) => ({
-          passed: false,
-          input: tc.input,
-          expected: tc.expected,
-          output: null,
-          error: "Could not parse output",
-        })),
-      };
-    }
-  } finally {
-    await unlink(tmpFile).catch(() => {});
+  // OS stop the program mainly due to exceed execution time
+  //SIGKILL -> immediately stop, SIGTERM -> stop gracefully(take your time)
+  if (signal === "SIGKILL" || signal === "SIGTERM") {
+    return {
+      results: testCases.map((tc) => ({
+        passed: false,
+        input: tc.input,
+        expected: tc.expected,
+        output: null,
+        error: "Execution Timed Out (Time Limit Exceeded)",
+      })),
+    };
   }
-}
 
-async function checkFile(path: string): Promise<boolean> {
+  //when there are output errors and no output received
+  if (stderr && !stdout) {
+    const lineOffset = isJs ? 1 : 3;
+    const errorMsg = cleanErrorMessage(stderr, language, lineOffset);
+    return {
+      results: testCases.map((tc) => ({
+        passed: false,
+        input: tc.input,
+        expected: tc.expected,
+        output: null,
+        error: errorMsg,
+      })),
+    };
+  }
+
   try {
-    const { access } = await import("fs/promises");
-    await access(path);
-    return true;
+    const results = JSON.parse(stdout || "[]");
+    return { results };
   } catch {
-    return false;
+    return {
+      results: testCases.map((tc) => ({
+        passed: false,
+        input: tc.input,
+        expected: tc.expected,
+        output: null,
+        error: stderr
+          ? cleanErrorMessage(stderr, language, isJs ? 1 : 3)
+          : "Could not parse output",
+      })),
+    };
   }
 }
