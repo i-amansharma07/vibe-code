@@ -14,10 +14,10 @@ curl -X POST http://localhost:2000/api/v2/packages \
   -d '{"language": "python", "version": "3.10.0"}'
 
 echo ""
-echo "📦 Installing JavaScript (18.15.0)..."
+echo "📦 Installing Node.js / JavaScript (18.15.0)..."
 curl -X POST http://localhost:2000/api/v2/packages \
   -H "Content-Type: application/json" \
-  -d '{"language": "javascript", "version": "18.15.0"}'
+  -d '{"language": "node", "version": "18.15.0"}'
 
 echo ""
 echo "-----------------------------------"

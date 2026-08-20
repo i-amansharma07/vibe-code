@@ -19,6 +19,10 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    extra_hosts:
+      - "release-assets.githubusercontent.com:185.199.108.133"
+      - "raw.githubusercontent.com:185.199.108.133"
+      - "objects.githubusercontent.com:185.199.108.133"
     ports:
       - "2000:2000"
     volumes:

@@ -63,8 +63,8 @@ async function executeInPiston(
     language: config.language,
     version: config.version,
     files: [{ name: config.filename, content: code }],
-    run_timeout: 5000,
-    compile_timeout: 5000,
+    run_timeout: 3000,
+    compile_timeout: 3000,
   };
 
   let res: Response;
